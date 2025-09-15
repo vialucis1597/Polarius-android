@@ -215,6 +215,9 @@ class SpaceDirectoryViewModel @AssistedInject constructor(
             is SpaceDirectoryViewAction.FilterRooms -> {
                 filter(action.query)
             }
+            is SpaceDirectoryViewAction.NavigateToSubSpace -> {
+                handleNavigateToSubSpace(action)
+            }
         }
     }
 
@@ -394,6 +397,24 @@ class SpaceDirectoryViewModel @AssistedInject constructor(
                     )
                 }
             }
+        }
+    }
+
+    private fun handleNavigateToSubSpace(action: SpaceDirectoryViewAction.NavigateToSubSpace) = withState { state ->
+        // GOV 또는 DCA 하위스페이스로 이동
+        val subSpaceName = action.subSpaceName
+        val spaceId = action.spaceId
+        
+        // 하위스페이스 찾기
+        val subSpace = state.apiResults[spaceId]?.invoke()?.children?.find { 
+            it.name?.contains(subSpaceName, ignoreCase = true) == true 
+        }
+        
+        if (subSpace != null) {
+            handle(SpaceDirectoryViewAction.ExploreSubSpace(subSpace))
+        } else {
+            // 하위스페이스를 찾을 수 없는 경우 새로고침
+            refreshFromApi(spaceId)
         }
     }
 

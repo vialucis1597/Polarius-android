@@ -7,6 +7,7 @@
 
 package im.vector.app.features.spaces.manage
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -231,6 +232,145 @@ class SpaceSettingsFragment :
 
     override fun onRoomPermissionsClicked() {
         sharedViewModel.handle(SpaceManagedSharedAction.OpenSpacePermissionSettings)
+    }
+
+    override fun onWalletClicked() {
+        showWalletDialog()
+    }
+
+    private fun showWalletDialog() {
+        val wallet = im.vector.app.features.wallet.DAOMnemonicWallet.getInstance(requireContext())
+        val roomId = roomProfileArgs.roomId
+        val existingWallet = wallet.getDAOWallet(roomId)
+
+        if (existingWallet == null) {
+            // 지갑이 없는 경우 - 생성/복원 옵션 표시
+            showCreateWalletDialog(wallet, roomId)
+        } else {
+            // 지갑이 있는 경우 - 지갑 정보 표시
+            showWalletInfoDialog(existingWallet, wallet)
+        }
+    }
+
+    private fun showCreateWalletDialog(wallet: im.vector.app.features.wallet.DAOMnemonicWallet, roomId: String) {
+        val options = arrayOf("Create New Wallet", "Restore Existing Wallet")
+        
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("DAO Wallet")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> createNewWallet(wallet, roomId)
+                    1 -> showRestoreWalletDialog(wallet, roomId)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun createNewWallet(wallet: im.vector.app.features.wallet.DAOMnemonicWallet, roomId: String) {
+        try {
+            val roomName = "DAO $roomId"
+            val newWallet = wallet.createDAOWallet(roomId, roomName)
+            
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Wallet Created Successfully")
+                .setMessage("Your DAO wallet has been created!\n\nAddress: ${newWallet.address}\n\nMnemonic: ${newWallet.mnemonic}\n\nPlease keep your mnemonic phrase in a safe place.")
+                .setPositiveButton("Copy Mnemonic") { _, _ ->
+                    copyToClipboard(newWallet.mnemonic)
+                }
+                .setNegativeButton("OK", null)
+                .show()
+        } catch (e: Exception) {
+            showError("Failed to create wallet: ${e.message}")
+        }
+    }
+
+    private fun showRestoreWalletDialog(wallet: im.vector.app.features.wallet.DAOMnemonicWallet, roomId: String) {
+        val input = android.widget.EditText(requireContext())
+        input.hint = "Enter mnemonic phrase (12 words)"
+        
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Restore Wallet")
+            .setMessage("Enter your mnemonic phrase to restore your wallet:")
+            .setView(input)
+            .setPositiveButton("Restore") { _, _ ->
+                val mnemonic = input.text.toString().trim()
+                if (mnemonic.isNotEmpty()) {
+                    restoreWallet(wallet, roomId, mnemonic)
+                } else {
+                    showError("Please enter a mnemonic phrase")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun restoreWallet(wallet: im.vector.app.features.wallet.DAOMnemonicWallet, roomId: String, mnemonic: String) {
+        try {
+            val roomName = "DAO $roomId"
+            wallet.createDAOWalletFromMnemonic(roomId, roomName, "B", 1, mnemonic)
+            showSuccess("Wallet restored successfully!")
+        } catch (e: Exception) {
+            showError("Failed to restore wallet: ${e.message}")
+        }
+    }
+
+    private fun showWalletInfoDialog(walletData: im.vector.app.features.wallet.DAOWalletData, wallet: im.vector.app.features.wallet.DAOMnemonicWallet) {
+        val options = arrayOf("Copy Address", "Export Wallet", "Delete Wallet")
+        
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("DAO Wallet - ${walletData.daoName}")
+            .setMessage("Address: ${walletData.address}\nBalance: ${walletData.balance} ${walletData.currency}")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> copyToClipboard(walletData.address)
+                    1 -> exportWallet(walletData)
+                    2 -> deleteWallet(wallet, walletData.daoId)
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun copyToClipboard(text: String) {
+        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clip = android.content.ClipData.newPlainText("DAO Wallet", text)
+        clipboard.setPrimaryClip(clip)
+        showSuccess("Copied to clipboard")
+    }
+
+    private fun exportWallet(walletData: im.vector.app.features.wallet.DAOWalletData) {
+        val exportData = """
+            DAO: ${walletData.daoId}
+            Name: ${walletData.daoName}
+            Mnemonic: ${walletData.mnemonic}
+            Address: ${walletData.address}
+            Balance: ${walletData.balance} ${walletData.currency}
+            Created: ${walletData.createdAt}
+        """.trimIndent()
+        
+        copyToClipboard(exportData)
+        showSuccess("Wallet data copied to clipboard")
+    }
+
+    private fun deleteWallet(wallet: im.vector.app.features.wallet.DAOMnemonicWallet, daoId: String) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Delete Wallet")
+            .setMessage("Are you sure you want to delete your DAO wallet? This action cannot be undone.")
+            .setPositiveButton("Delete") { _, _ ->
+                wallet.deleteDAOWallet(daoId)
+                showSuccess("Wallet deleted successfully")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showError(message: String) {
+        requireContext().toast(message)
+    }
+
+    private fun showSuccess(message: String) {
+        requireContext().toast(message)
     }
 
     override fun onImageReady(uri: Uri?) {

@@ -16,6 +16,7 @@ sealed class SpaceDirectoryViewAction : VectorViewModelAction {
     data class FilterRooms(val query: String?) : SpaceDirectoryViewAction()
     data class ShowDetails(val spaceChildInfo: SpaceChildInfo) : SpaceDirectoryViewAction()
     data class NavigateToRoom(val roomId: String) : SpaceDirectoryViewAction()
+    data class NavigateToSubSpace(val spaceId: String, val subSpaceName: String) : SpaceDirectoryViewAction()
     object CreateNewRoom : SpaceDirectoryViewAction()
     object HandleBack : SpaceDirectoryViewAction()
     object Retry : SpaceDirectoryViewAction()

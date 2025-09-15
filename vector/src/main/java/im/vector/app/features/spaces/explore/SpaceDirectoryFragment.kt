@@ -248,6 +248,16 @@ class SpaceDirectoryFragment :
         viewModel.handle(SpaceDirectoryViewAction.LoadAdditionalItemsIfNeeded)
     }
 
+    override fun onGovButtonClick(spaceId: String) {
+        // GOV 하위스페이스로 이동
+        viewModel.handle(SpaceDirectoryViewAction.NavigateToSubSpace(spaceId, "GOV"))
+    }
+
+    override fun onDcaButtonClick(spaceId: String) {
+        // DCA 하위스페이스로 이동
+        viewModel.handle(SpaceDirectoryViewAction.NavigateToSubSpace(spaceId, "DCA"))
+    }
+
     override fun onUrlClicked(url: String, title: String): Boolean {
         viewLifecycleOwner.lifecycleScope.launch {
             val isHandled = permalinkHandler.launch(requireActivity(), url, null)

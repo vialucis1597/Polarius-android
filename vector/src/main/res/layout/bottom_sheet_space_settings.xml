@@ -110,6 +110,15 @@
         app:titleTextColor="?vctr_content_primary" />
 
     <im.vector.app.core.ui.views.BottomSheetActionButton
+        android:id="@+id/daoWallet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:actionTitle="DAO Wallet"
+        app:leftIcon="@drawable/ic_wallet"
+        app:tint="?vctr_content_secondary"
+        app:titleTextColor="?vctr_content_primary" />
+
+    <im.vector.app.core.ui.views.BottomSheetActionButton
         android:id="@+id/addRooms"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

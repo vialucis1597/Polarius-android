@@ -98,6 +98,7 @@ class CreateSpaceViewModelTask @Inject constructor(
                     ?: true
         } ?: true
 
+        // Create default rooms
         params.defaultRooms
                 .filter { it.isNotBlank() }
                 .forEach { roomName ->
@@ -161,6 +162,96 @@ class CreateSpaceViewModelTask @Inject constructor(
                         childErrors[roomName] = failure
                     }
                 }
+
+        // Create DAO-specific ledger room
+        try {
+            val ledgerRoomId = try {
+                if (params.isPublic) {
+                    session.roomService().createRoom(
+                            CreateRoomParams().apply {
+                                this.name = "ledger"
+                                this.preset = CreateRoomPreset.PRESET_PUBLIC_CHAT
+                            }
+                    )
+                } else {
+                    val homeServerCapabilities = session
+                            .homeServerCapabilitiesService()
+                            .getHomeServerCapabilities()
+                    val restrictedSupport = homeServerCapabilities
+                            .isFeatureSupported(HomeServerCapabilities.ROOM_CAP_RESTRICTED)
+
+                    val createRestricted = restrictedSupport == HomeServerCapabilities.RoomCapabilitySupport.SUPPORTED
+                    if (createRestricted) {
+                        session.roomService().createRoom(CreateRoomParams().apply {
+                            this.name = "ledger"
+                            this.featurePreset = RestrictedRoomPreset(
+                                    homeServerCapabilities,
+                                    listOf(
+                                            RoomJoinRulesAllowEntry.restrictedToRoom(spaceID)
+                                    )
+                            )
+                            if (e2eByDefault) {
+                                this.enableEncryption()
+                            }
+                        })
+                    } else {
+                        session.roomService().createRoom(CreateRoomParams().apply {
+                            this.name = "ledger"
+                            visibility = RoomDirectoryVisibility.PRIVATE
+                            this.preset = CreateRoomPreset.PRESET_PRIVATE_CHAT
+                            if (e2eByDefault) {
+                                this.enableEncryption()
+                            }
+                        })
+                    }
+                }
+            } catch (timeout: CreateRoomFailure.CreatedWithTimeout) {
+                timeout.roomID
+            }
+            val via = session.sessionParams.homeServerHost?.let { listOf(it) } ?: emptyList()
+            createdSpace!!.addChildren(ledgerRoomId, via, null, suggested = true)
+            session.spaceService().setSpaceParent(
+                    ledgerRoomId,
+                    createdSpace.spaceId,
+                    true,
+                    via
+            )
+            childIds.add(ledgerRoomId)
+        } catch (failure: Throwable) {
+            Timber.d("DAO: Failed to create ledger room in $spaceID")
+            childErrors["ledger"] = failure
+        }
+
+        // Create GOV and DCA subspaces
+        listOf("GOV", "DCA").forEach { subspaceName ->
+            try {
+                val subspaceId = session.spaceService().createSpace(CreateSpaceParams().apply {
+                    this.name = subspaceName
+                    this.topic = "DAO $subspaceName subspace"
+                    if (params.isPublic) {
+                        this.preset = CreateRoomPreset.PRESET_PUBLIC_CHAT
+                        this.historyVisibility = RoomHistoryVisibility.WORLD_READABLE
+                        this.guestAccess = GuestAccess.CanJoin
+                    } else {
+                        this.preset = CreateRoomPreset.PRESET_PRIVATE_CHAT
+                        visibility = RoomDirectoryVisibility.PRIVATE
+                    }
+                })
+                
+                val via = session.sessionParams.homeServerHost?.let { listOf(it) } ?: emptyList()
+                createdSpace!!.addChildren(subspaceId, via, null, suggested = true)
+                session.spaceService().setSpaceParent(
+                        subspaceId,
+                        createdSpace.spaceId,
+                        true,
+                        via
+                )
+                childIds.add(subspaceId)
+            } catch (failure: Throwable) {
+                Timber.d("DAO: Failed to create $subspaceName subspace in $spaceID")
+                childErrors[subspaceName] = failure
+            }
+        }
 
         return if (childErrors.isEmpty()) {
             CreateSpaceTaskResult.Success(spaceID, childIds)

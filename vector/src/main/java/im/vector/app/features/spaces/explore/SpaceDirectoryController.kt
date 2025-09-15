@@ -54,6 +54,8 @@ class SpaceDirectoryController @Inject constructor(
         fun retry()
         fun addExistingRooms(spaceId: String)
         fun loadAdditionalItemsIfNeeded()
+        fun onGovButtonClick(spaceId: String)
+        fun onDcaButtonClick(spaceId: String)
     }
 
     var listener: InteractionListener? = null
@@ -106,6 +108,42 @@ class SpaceDirectoryController @Inject constructor(
                     ?: emptyList()
 
             if (flattenChildInfo.isEmpty()) {
+                // GOV 버튼 추가
+                genericEmptyWithActionItem {
+                    id("gov_button")
+                    title("GOV")
+                    description("Governance sub-space")
+                    iconRes(R.drawable.ic_empty_icon_room)
+                    iconTint(host.colorProvider.getColorFromAttribute(im.vector.lib.ui.styles.R.attr.vctr_reaction_background_on))
+                    buttonAction(
+                            Action(
+                                    title = "Open GOV",
+                                    listener = object : ClickListener {
+                                        override fun invoke(p1: View) {
+                                            host.listener?.onGovButtonClick(data?.spaceId ?: "")
+                                        }
+                                    }
+                            ))
+                }
+                
+                // DCA 버튼 추가
+                genericEmptyWithActionItem {
+                    id("dca_button")
+                    title("DCA")
+                    description("DCA sub-space")
+                    iconRes(R.drawable.ic_empty_icon_room)
+                    iconTint(host.colorProvider.getColorFromAttribute(im.vector.lib.ui.styles.R.attr.vctr_reaction_background_on))
+                    buttonAction(
+                            Action(
+                                    title = "Open DCA",
+                                    listener = object : ClickListener {
+                                        override fun invoke(p1: View) {
+                                            host.listener?.onDcaButtonClick(data?.spaceId ?: "")
+                                        }
+                                    }
+                            ))
+                }
+                
                 genericEmptyWithActionItem {
                     id("empty_res")
                     title(host.stringProvider.getString(CommonStrings.this_space_has_no_rooms))

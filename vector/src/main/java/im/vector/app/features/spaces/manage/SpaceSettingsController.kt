@@ -44,6 +44,7 @@ class SpaceSettingsController @Inject constructor(
         fun setIsPublic(public: Boolean)
         fun onRoomAliasesClicked()
         fun onRoomPermissionsClicked()
+        fun onWalletClicked()
     }
 
     var callback: Callback? = null
@@ -155,9 +156,19 @@ class SpaceSettingsController @Inject constructor(
                 id = "permissions",
                 title = stringProvider.getString(CommonStrings.space_settings_permissions_title),
                 subtitle = stringProvider.getString(CommonStrings.space_settings_permissions_subtitle),
-                divider = vectorPreferences.developerMode(),
+                divider = true,
                 editable = true,
                 action = { callback?.onRoomPermissionsClicked() }
+        )
+
+        // DAO Wallet Section
+        buildProfileAction(
+                id = "wallet",
+                title = "DAO Wallet",
+                subtitle = "Manage your DAO wallet",
+                divider = vectorPreferences.developerMode(),
+                editable = true,
+                action = { callback?.onWalletClicked() }
         )
 
         if (vectorPreferences.developerMode()) {
