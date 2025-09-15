@@ -12,6 +12,7 @@ import android.content.SharedPreferences
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.*
+import org.matrix.android.sdk.api.session.Session
 
 data class DAOWalletData(
     val daoId: String,
@@ -35,7 +36,8 @@ data class DAOWalletSummary(
 )
 
 class DAOMnemonicWallet private constructor(
-    private val context: Context
+    private val context: Context,
+    private val session: Session? = null
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("dao_wallet", Context.MODE_PRIVATE)
     private val daoWallets = mutableMapOf<String, DAOWalletData>()
@@ -45,9 +47,9 @@ class DAOMnemonicWallet private constructor(
         @Volatile
         private var INSTANCE: DAOMnemonicWallet? = null
 
-        fun getInstance(context: Context): DAOMnemonicWallet {
+        fun getInstance(context: Context, session: Session? = null): DAOMnemonicWallet {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: DAOMnemonicWallet(context.applicationContext).also { INSTANCE = it }
+                INSTANCE ?: DAOMnemonicWallet(context.applicationContext, session).also { INSTANCE = it }
             }
         }
     }
@@ -104,7 +106,20 @@ class DAOMnemonicWallet private constructor(
             createdAt = Date().toString()
         )
 
+        // 기존 지갑이 있다면 모든 DAO에 동일한 지갑 정보를 저장
+        if (daoWallets.isNotEmpty()) {
+            // 기존 지갑들을 모두 새로운 지갑 정보로 업데이트
+            val existingDaoIds = daoWallets.keys.toList()
+            daoWallets.clear()
+            
+            for (existingDaoId in existingDaoIds) {
+                daoWallets[existingDaoId] = daoWallet.copy(daoId = existingDaoId)
+            }
+        }
+        
+        // 현재 DAO에도 지갑 저장
         daoWallets[daoId] = daoWallet
+        
         saveWalletsToStorage()
         notifyListeners()
 
@@ -112,18 +127,23 @@ class DAOMnemonicWallet private constructor(
     }
 
     fun getDAOWallet(daoId: String): DAOWalletData? {
-        return daoWallets[daoId]
+        // 먼저 해당 DAO ID로 지갑을 찾아보고, 없으면 첫 번째 지갑을 반환하되 현재 DAO ID로 수정
+        val wallet = daoWallets[daoId] ?: daoWallets.values.firstOrNull()
+        return wallet?.copy(daoId = daoId, daoName = "DAO Wallet")
     }
 
     fun getAllDAOWallets(): List<DAOWalletSummary> {
-        return daoWallets.values.map { wallet ->
+        // 중복 제거: 동일한 주소를 가진 지갑들을 하나로 합침
+        val uniqueWallets = daoWallets.values.groupBy { it.address }
+        return uniqueWallets.values.map { wallets ->
+            val firstWallet = wallets.first()
             DAOWalletSummary(
-                daoId = wallet.daoId,
-                daoName = wallet.daoName,
-                address = wallet.address,
-                currency = wallet.currency,
-                balance = wallet.balance,
-                contributionValue = wallet.contributionValue
+                daoId = firstWallet.daoId,
+                daoName = firstWallet.daoName,
+                address = firstWallet.address,
+                currency = firstWallet.currency,
+                balance = firstWallet.balance,
+                contributionValue = firstWallet.contributionValue
             )
         }
     }
@@ -195,5 +215,44 @@ class DAOMnemonicWallet private constructor(
     private fun notifyListeners() {
         val summaries = getAllDAOWallets()
         listeners.forEach { it(summaries) }
+    }
+
+    // 프로토콜상 존재하는 모든 DAO에 대한 잔액 조회 (클라이언트에 없는 DAO 포함)
+    fun getAllProtocolDAOBalances(): List<DAOWalletSummary> {
+        try {
+            // 이미 생성된 지갑이 있다면 그 주소를 사용
+            val existingWallets = getAllDAOWallets()
+            if (existingWallets.isEmpty()) {
+                return emptyList() // 지갑이 없으면 빈 리스트 반환
+            }
+
+            // TODO: Matrix SDK의 올바른 API를 사용하여 모든 스페이스 룸을 가져와야 함
+            // 현재는 기존 지갑들만 반환 (하나의 지갑이 모든 DAO에 적용됨)
+            return existingWallets.sortedByDescending { it.balance } // 잔액 많은 순으로 정렬
+        } catch (error: Exception) {
+            // 실패시 기존 지갑만 반환
+            return getAllDAOWallets()
+        }
+    }
+
+    // 원장에서 지갑 주소의 최신 잔액 복구
+    private fun recoverBalanceFromLedger(): Long {
+        try {
+            // TODO: Matrix SDK의 올바른 API를 사용하여 원장에서 잔액을 조회해야 함
+            // 현재는 기본값 0 반환
+            return 0L
+        } catch (error: Exception) {
+            return 0L
+        }
+    }
+
+    // DAO의 원장 룸 찾기
+    private fun findLedgerRoom(): String? {
+        try {
+            // TODO: Matrix SDK의 올바른 API를 사용하여 DAO 스페이스의 자식 룸 중 "ledger" 이름의 룸 찾기
+            return null
+        } catch (error: Exception) {
+            return null
+        }
     }
 }

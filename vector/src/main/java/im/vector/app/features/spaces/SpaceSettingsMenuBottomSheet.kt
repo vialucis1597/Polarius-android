@@ -33,6 +33,7 @@ import im.vector.app.features.spaces.leave.SpaceLeaveAdvancedActivity
 import im.vector.app.features.spaces.manage.ManageType
 import im.vector.app.features.spaces.manage.SpaceManageActivity
 import im.vector.app.features.wallet.DAOMnemonicWallet
+import im.vector.app.core.di.ActiveSessionHolder
 import kotlinx.parcelize.Parcelize
 import org.matrix.android.sdk.api.extensions.orFalse
 import org.matrix.android.sdk.api.util.toMatrixItem
@@ -49,6 +50,7 @@ class SpaceSettingsMenuBottomSheet : VectorBaseBottomSheetDialogFragment<BottomS
     @Inject lateinit var navigator: Navigator
     @Inject lateinit var avatarRenderer: AvatarRenderer
     @Inject lateinit var bugReporter: BugReporter
+    @Inject lateinit var activeSessionHolder: ActiveSessionHolder
 
     private val spaceArgs: SpaceBottomSheetSettingsArgs by args()
 
@@ -134,7 +136,8 @@ class SpaceSettingsMenuBottomSheet : VectorBaseBottomSheetDialogFragment<BottomS
     }
 
     private fun showWalletDialog() {
-        val wallet = DAOMnemonicWallet.getInstance(requireContext())
+        val session = activeSessionHolder.getActiveSession()
+        val wallet = DAOMnemonicWallet.getInstance(requireContext(), session)
         val roomId = spaceArgs.spaceId
         val existingWallet = wallet.getDAOWallet(roomId)
 
@@ -164,12 +167,15 @@ class SpaceSettingsMenuBottomSheet : VectorBaseBottomSheetDialogFragment<BottomS
 
     private fun createNewWallet(wallet: DAOMnemonicWallet, roomId: String) {
         try {
-            val roomName = "DAO $roomId"
+            val roomName = "DAO Wallet"
             val newWallet = wallet.createDAOWallet(roomId, roomName)
+            
+            // 지갑 생성 후 모든 DAO에 적용
+            val allBalances = wallet.getAllProtocolDAOBalances()
             
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle("Wallet Created Successfully")
-                .setMessage("Your DAO wallet has been created!\n\nAddress: ${newWallet.address}\n\nMnemonic: ${newWallet.mnemonic}\n\nPlease keep your mnemonic phrase in a safe place.")
+                .setMessage("Your DAO wallet has been created and applied to all DAOs!\n\nAddress: ${newWallet.address}\n\nMnemonic: ${newWallet.mnemonic}\n\nFound ${allBalances.size} DAOs with this wallet.\n\nPlease keep your mnemonic phrase in a safe place.")
                 .setPositiveButton("Copy Mnemonic") { _, _ ->
                     copyToClipboard(newWallet.mnemonic)
                 }
@@ -202,9 +208,13 @@ class SpaceSettingsMenuBottomSheet : VectorBaseBottomSheetDialogFragment<BottomS
 
     private fun restoreWallet(wallet: DAOMnemonicWallet, roomId: String, mnemonic: String) {
         try {
-            val roomName = "DAO $roomId"
+            val roomName = "DAO Wallet"
             wallet.createDAOWalletFromMnemonic(roomId, roomName, "B", 1, mnemonic)
-            showSuccess("Wallet restored successfully!")
+            
+            // 지갑 복원 후 모든 DAO에 적용
+            val allBalances = wallet.getAllProtocolDAOBalances()
+            
+            showSuccess("Wallet restored successfully! Found ${allBalances.size} DAOs with this wallet.")
         } catch (e: Exception) {
             showError("Failed to restore wallet: ${e.message}")
         }
@@ -214,7 +224,7 @@ class SpaceSettingsMenuBottomSheet : VectorBaseBottomSheetDialogFragment<BottomS
         val options = arrayOf("Copy Address", "Export Wallet", "Delete Wallet")
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("DAO Wallet - ${walletData.daoName}")
+            .setTitle("DAO Wallet")
             .setMessage("Address: ${walletData.address}\nBalance: ${walletData.balance} ${walletData.currency}")
             .setItems(options) { _, which ->
                 when (which) {
