@@ -91,6 +91,11 @@ class DAOMnemonicWallet private constructor(
         val address = generateAddressFromMnemonic(mnemonic)
         val privateKey = generatePrivateKeyFromMnemonic(mnemonic)
         
+        // 디버깅을 위한 로그
+        android.util.Log.d("WalletDebug", "Creating wallet with daoId: $daoId")
+        android.util.Log.d("WalletDebug", "Generated address: $address")
+        android.util.Log.d("WalletDebug", "Generated privateKey: $privateKey")
+        
         // 간단한 잔액 설정
         val recoveredBalance = 0L
         
@@ -106,18 +111,13 @@ class DAOMnemonicWallet private constructor(
             createdAt = Date().toString()
         )
 
-        // 기존 지갑이 있다면 모든 DAO에 동일한 지갑 정보를 저장
+        // 기존 지갑이 있다면 모두 삭제하고 새로 생성
         if (daoWallets.isNotEmpty()) {
-            // 기존 지갑들을 모두 새로운 지갑 정보로 업데이트
-            val existingDaoIds = daoWallets.keys.toList()
+            android.util.Log.d("WalletDebug", "Clearing existing wallets before creating new one")
             daoWallets.clear()
-            
-            for (existingDaoId in existingDaoIds) {
-                daoWallets[existingDaoId] = daoWallet.copy(daoId = existingDaoId)
-            }
         }
         
-        // 현재 DAO에도 지갑 저장
+        // 현재 DAO에 지갑 저장
         daoWallets[daoId] = daoWallet
         
         saveWalletsToStorage()
@@ -129,7 +129,15 @@ class DAOMnemonicWallet private constructor(
     fun getDAOWallet(daoId: String): DAOWalletData? {
         // 먼저 해당 DAO ID로 지갑을 찾아보고, 없으면 첫 번째 지갑을 반환하되 현재 DAO ID로 수정
         val wallet = daoWallets[daoId] ?: daoWallets.values.firstOrNull()
-        return wallet?.copy(daoId = daoId, daoName = "DAO Wallet")
+        val result = wallet?.copy(daoId = daoId, daoName = "DAO Wallet")
+        
+        // 디버깅을 위한 로그
+        android.util.Log.d("WalletDebug", "getDAOWallet called with daoId: $daoId")
+        android.util.Log.d("WalletDebug", "Found wallet: ${wallet?.address}")
+        android.util.Log.d("WalletDebug", "Result wallet address: ${result?.address}")
+        android.util.Log.d("WalletDebug", "All wallets: ${daoWallets.keys}")
+        
+        return result
     }
 
     fun getAllDAOWallets(): List<DAOWalletSummary> {
@@ -155,6 +163,12 @@ class DAOMnemonicWallet private constructor(
 
     fun deleteDAOWallet(daoId: String) {
         daoWallets.remove(daoId)
+        saveWalletsToStorage()
+        notifyListeners()
+    }
+
+    fun clearAllWallets() {
+        daoWallets.clear()
         saveWalletsToStorage()
         notifyListeners()
     }
@@ -194,18 +208,24 @@ class DAOMnemonicWallet private constructor(
             for (walletString in walletStrings) {
                 val parts = walletString.split(":")
                 if (parts.size >= 9) {
-                    val wallet = DAOWalletData(
-                        daoId = parts[0],
-                        daoName = parts[1],
-                        mnemonic = parts[2],
-                        address = parts[3],
-                        privateKey = parts[4],
-                        currency = parts[5],
-                        balance = parts[6].toLongOrNull() ?: 0,
-                        contributionValue = parts[7].toLongOrNull() ?: 1,
-                        createdAt = parts[8]
-                    )
-                    daoWallets[wallet.daoId] = wallet
+                    val address = parts[3]
+                    // 잘못된 주소 (matrix.org 등)는 무시
+                    if (address.startsWith("0x") && address.length == 42) {
+                        val wallet = DAOWalletData(
+                            daoId = parts[0],
+                            daoName = parts[1],
+                            mnemonic = parts[2],
+                            address = address,
+                            privateKey = parts[4],
+                            currency = parts[5],
+                            balance = parts[6].toLongOrNull() ?: 0,
+                            contributionValue = parts[7].toLongOrNull() ?: 1,
+                            createdAt = parts[8]
+                        )
+                        daoWallets[wallet.daoId] = wallet
+                    } else {
+                        android.util.Log.d("WalletDebug", "Skipping invalid wallet address: $address")
+                    }
                 }
             }
         }
