@@ -40,6 +40,8 @@ import im.vector.app.features.voicebroadcast.model.VoiceBroadcastState
 import im.vector.app.features.voicebroadcast.model.asVoiceBroadcastEvent
 import im.vector.app.features.voicebroadcast.usecase.GetVoiceBroadcastStateEventLiveUseCase
 import im.vector.app.features.voicebroadcast.voiceBroadcastId
+import im.vector.app.features.wallet.DAOMnemonicWallet
+import im.vector.app.features.wallet.DCARoomUtils
 import im.vector.lib.core.utils.timer.Clock
 import im.vector.lib.strings.CommonStrings
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +54,8 @@ import org.matrix.android.sdk.api.query.QueryStringValue
 import org.matrix.android.sdk.api.session.Session
 import org.matrix.android.sdk.api.session.content.ContentAttachmentData
 import org.matrix.android.sdk.api.session.events.model.EventType
+import org.matrix.android.sdk.api.session.events.model.Content
+import org.matrix.android.sdk.api.util.JsonDict
 import org.matrix.android.sdk.api.session.events.model.getRootThreadEventId
 import org.matrix.android.sdk.api.session.events.model.isThread
 import org.matrix.android.sdk.api.session.events.model.toContent
@@ -231,6 +235,9 @@ class MessageComposerViewModel @AssistedInject constructor(
         withState { state ->
             analyticsTracker.capture(state.toAnalyticsComposer())
             setState { copy(startsThread = false) }
+            
+            // 모든 룸에서 지갑 주소 추가 (DCA 룸 감지 우회)
+            Timber.d("🔍 Android: Adding wallet address to all messages in room: ${room.roomId}")
             when (state.sendMode) {
                 is SendMode.Regular -> {
                     when (val parsedCommand = commandParser.parseSlashCommand(
@@ -248,10 +255,40 @@ class MessageComposerViewModel @AssistedInject constructor(
                                         autoMarkdown = action.autoMarkdown
                                 )
                             } else {
-                                if (action.formattedText != null) {
-                                    room.sendService().sendFormattedTextMessage(action.text.toString(), action.formattedText)
+                                // 모든 메시지에 지갑 주소 추가
+                                val wallet = DAOMnemonicWallet.getInstance()
+                                val walletAddress = wallet?.getDefaultWalletAddress() // 기본 지갑 주소 사용
+                                
+                                if (walletAddress != null) {
+                                    // 지갑 주소가 있는 경우 메시지에 추가
+                                    val additionalContent: Content = mapOf(
+                                        "wallet_address" to walletAddress,
+                                        "dao_id" to "default"
+                                    )
+                                    Timber.d("💰 Android: Adding wallet address to message: $walletAddress")
+                                    Timber.d("💰 Android: Additional content: $additionalContent")
+                                    
+                                    if (action.formattedText != null) {
+                                        room.sendService().sendFormattedTextMessage(
+                                            text = action.text.toString(),
+                                            formattedText = action.formattedText,
+                                            additionalContent = additionalContent
+                                        )
+                                    } else {
+                                        room.sendService().sendTextMessage(
+                                            text = action.text,
+                                            autoMarkdown = action.autoMarkdown,
+                                            additionalContent = additionalContent
+                                        )
+                                    }
+                                    Timber.d("💰 Added wallet address to message: $walletAddress")
                                 } else {
-                                    room.sendService().sendTextMessage(action.text, autoMarkdown = action.autoMarkdown)
+                                    // 지갑이 없는 경우 일반 메시지 전송
+                                    if (action.formattedText != null) {
+                                        room.sendService().sendFormattedTextMessage(action.text.toString(), action.formattedText)
+                                    } else {
+                                        room.sendService().sendTextMessage(action.text, autoMarkdown = action.autoMarkdown)
+                                    }
                                 }
                             }
 
@@ -596,12 +633,24 @@ class MessageComposerViewModel @AssistedInject constructor(
                     popDraft(room)
                 }
                 is SendMode.Quote -> {
+                    // 모든 메시지에 지갑 주소 포함
+                    val wallet = DAOMnemonicWallet.getInstance()
+                    val walletAddress = wallet?.getDefaultWalletAddress()
+                    val additionalContent = if (walletAddress != null) {
+                        Timber.d("💰 Android: Adding wallet address to quote message: $walletAddress")
+                        mapOf(
+                            "wallet_address" to walletAddress,
+                            "dao_id" to "default"
+                        )
+                    } else null
+                    
                     room.sendService().sendQuotedTextMessage(
                             quotedEvent = state.sendMode.timelineEvent,
                             text = action.text.toString(),
                             formattedText = action.formattedText,
                             autoMarkdown = action.autoMarkdown,
-                            rootThreadEventId = state.rootThreadEventId
+                            rootThreadEventId = state.rootThreadEventId,
+                            additionalContent = additionalContent
                     )
                     _viewEvents.post(MessageComposerViewEvents.MessageSent)
                     popDraft(room)
@@ -611,22 +660,53 @@ class MessageComposerViewModel @AssistedInject constructor(
                     val showInThread = state.sendMode.timelineEvent.root.isThread() && state.rootThreadEventId == null
                     // If threads are disabled this will make the fallback replies visible to clients with threads enabled
                     val rootThreadEventId = if (showInThread) timelineEvent.root.getRootThreadEventId() else null
-                    state.rootThreadEventId?.let {
-                        room.relationService().replyInThread(
-                                rootThreadEventId = it,
-                                replyInThreadText = action.text,
-                                autoMarkdown = action.autoMarkdown,
-                                formattedText = action.formattedText,
-                                eventReplied = timelineEvent
+                    
+                    // 모든 메시지에 지갑 주소 포함
+                    val wallet = DAOMnemonicWallet.getInstance()
+                    val walletAddress = wallet?.getDefaultWalletAddress()
+                    val additionalContent = if (walletAddress != null) {
+                        Timber.d("💰 Android: Adding wallet address to reply message: $walletAddress")
+                        mapOf(
+                            "wallet_address" to walletAddress,
+                            "dao_id" to "default"
                         )
-                    } ?: room.relationService().replyToMessage(
-                            eventReplied = timelineEvent,
-                            replyText = action.text,
-                            replyFormattedText = action.formattedText,
-                            autoMarkdown = action.autoMarkdown,
-                            showInThread = showInThread,
-                            rootThreadEventId = rootThreadEventId
-                    )
+                    } else null
+                    
+                    // RelationService는 additionalContent를 지원하지 않으므로 일반 메시지 전송 사용
+                    if (additionalContent != null) {
+                        // DCA 룸인 경우 일반 메시지 전송으로 지갑 정보 포함
+                        if (action.formattedText != null) {
+                            room.sendService().sendFormattedTextMessage(
+                                text = action.text.toString(),
+                                formattedText = action.formattedText,
+                                additionalContent = additionalContent
+                            )
+                        } else {
+                            room.sendService().sendTextMessage(
+                                text = action.text,
+                                autoMarkdown = action.autoMarkdown,
+                                additionalContent = additionalContent
+                            )
+                        }
+                    } else {
+                        // 일반 룸인 경우 기존 방식 사용
+                        state.rootThreadEventId?.let {
+                            room.relationService().replyInThread(
+                                    rootThreadEventId = it,
+                                    replyInThreadText = action.text,
+                                    autoMarkdown = action.autoMarkdown,
+                                    formattedText = action.formattedText,
+                                    eventReplied = timelineEvent
+                            )
+                        } ?: room.relationService().replyToMessage(
+                                eventReplied = timelineEvent,
+                                replyText = action.text,
+                                replyFormattedText = action.formattedText,
+                                autoMarkdown = action.autoMarkdown,
+                                showInThread = showInThread,
+                                rootThreadEventId = rootThreadEventId
+                        )
+                    }
 
                     _viewEvents.post(MessageComposerViewEvents.MessageSent)
                     popDraft(room)

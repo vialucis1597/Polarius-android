@@ -52,6 +52,10 @@ class DAOMnemonicWallet private constructor(
                 INSTANCE ?: DAOMnemonicWallet(context.applicationContext, session).also { INSTANCE = it }
             }
         }
+        
+        fun getInstance(): DAOMnemonicWallet? {
+            return INSTANCE
+        }
     }
 
     init {
@@ -274,5 +278,24 @@ class DAOMnemonicWallet private constructor(
         } catch (error: Exception) {
             return null
         }
+    }
+    
+    /**
+     * DCA 룸에서 사용할 지갑 주소를 가져옴
+     * @param daoId DAO ID
+     * @return 지갑 주소 또는 null
+     */
+    fun getWalletAddressForDCA(daoId: String): String? {
+        val wallet = getDAOWallet(daoId)
+        return wallet?.address
+    }
+    
+    /**
+     * 기본 지갑 주소를 가져옴 (첫 번째 DAO 지갑 사용)
+     * @return 기본 지갑 주소 또는 null
+     */
+    fun getDefaultWalletAddress(): String? {
+        val wallets = getAllDAOWallets()
+        return wallets.firstOrNull()?.address
     }
 }
